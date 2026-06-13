@@ -134,6 +134,9 @@ class HRApp:
         tk.Button(top_frame, text="+ Вписати нову людину", bg="#107c41", fg="white", command=self.open_add_window).pack(
             side="right")
 
+        tk.Button(top_frame, text="- Видалити обраного", bg="#a80000", fg="white", command=self.delete_employee).pack(
+            side="right", padx=10)
+
         # Таблиця
         columns = ("id", "name", "birth", "gender", "position", "category")
         self.tree = ttk.Treeview(self.root, columns=columns, show="headings", height=15)
@@ -233,3 +236,34 @@ if __name__ == "__main__":
     window = tk.Tk()
     app = HRApp(window)
     window.mainloop()
+
+
+    # --- ФУНКЦІЯ ВИДАЛЕННЯ ПРАЦІВНИКА ---
+    def delete_employee(self):
+        # Отримуємо виділений рядок у таблиці
+        selected_item = self.tree.selection()
+
+        # Якщо нічого не виділено — показуємо попередження
+        if not selected_item:
+            messagebox.showwarning("Увага", "Будь ласка, спочатку виберіть працівника у таблиці кліком миші!")
+            return
+
+        # Витягуємо дані виділеного рядка (ID та ПІБ)
+        item_values = self.tree.item(selected_item, "values")
+        emp_id = item_values[0]
+        emp_name = item_values[1]
+
+        # Запитуємо підтвердження (захист від випадкового кліку)
+        confirm = messagebox.askyesno("Підтвердження", f"Ви дійсно хочете видалити працівника:\n{emp_name}?")
+
+        if confirm:
+            # Видаляємо з бази даних
+            conn = sqlite3.connect("hr_port.db")
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM Employees WHERE id = ?", (emp_id,))
+            conn.commit()
+            conn.close()
+
+            # Оновлюємо таблицю на екрані
+            self.load_data()
+            messagebox.showinfo("Успіх", "Особову справу працівника успішно видалено з бази.")
