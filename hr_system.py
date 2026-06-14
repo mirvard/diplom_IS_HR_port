@@ -3,15 +3,16 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 
 
-# =====================================================================
-# 1. ІНІЦІАЛІЗАЦІЯ БАЗИ ДАНИХ (СТРОГО ЗА ТЗ)
-# =====================================================================
+# 1. ІНІЦІАЛІЗАЦІЯ БАЗИ ДАНИХ (створюється сама при першому запуску)
 def init_database():
+    # Підключаємося до локальної БД (створиться файл hr_port.db )
     conn = sqlite3.connect("hr_port.db")
     cursor = conn.cursor()
+
+    # Вмикаємо підтримку зовнішніх ключів, бо SQLite за замовчуванням їх ігнорує
     cursor.execute("PRAGMA foreign_keys = ON;")
 
-    # Таблиця користувачів (Парольний вхід)
+    # Створюємо таблицю користувачів для вікна логіну
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS Users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -20,7 +21,7 @@ def init_database():
         )
     """)
 
-    # Таблиця категорій/спеціальностей персоналу
+    # Довідник відділів/служб порту
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS Categories (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -28,7 +29,7 @@ def init_database():
         )
     """)
 
-    # Таблиця працівників (Особова справа)
+    # Головна таблиця працівників. category_id прив'язаний до Categories
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS Employees (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -41,12 +42,13 @@ def init_database():
         )
     """)
 
-    # Заповнення початковими даними, якщо база порожня
+    # Перевірка: якщо таблиця юзерів порожня (перший запуск), заповнюємо базу тестовими даними
     cursor.execute("SELECT COUNT(*) FROM Users")
     if cursor.fetchone()[0] == 0:
-        cursor.execute("INSERT INTO Users (username, password) VALUES ('admin', 'admin123')")
+        # Хардкод адміна для зручності на передзахисті (до треба буде додати хешування)
+        cursor.execute("INSERT INTO Users (username, password) VALUES ('admin', 'admin')")
 
-        # 5 категорій з ТЗ керівника
+        # Забиваємо базові категорії порту
         categories = [
             'Керівництво та Адміністрація',
             'Служба капітана порту',
@@ -57,9 +59,10 @@ def init_database():
         for cat in categories:
             cursor.execute("INSERT INTO Categories (name) VALUES (?)", (cat,))
 
-        # Тестові працівники
+        # Тест люди
         cursor.execute(
             "INSERT INTO Employees (full_name, birth_date, gender, position, category_id) VALUES ('Іванов Петро Іванович', '1985-04-12', 'Чоловіча', 'Начальник порту', 1)")
+        # Записав себе капітаном чисто для тесту)
         cursor.execute(
             "INSERT INTO Employees (full_name, birth_date, gender, position, category_id) VALUES ('Панков Михайло Романович', '2004-05-12', 'Чоловіча', 'Капітан далекого плавання', 2)")
         cursor.execute(
@@ -69,18 +72,16 @@ def init_database():
     conn.close()
 
 
-# =====================================================================
 # 2. ГРАФІЧНИЙ ІНТЕРФЕЙС
-# =====================================================================
 class HRApp:
     def __init__(self, root):
         self.root = root
         self.root.title("ІС Відділу кадрів морського порту")
-        self.root.geometry("400x250")
+        self.root.geometry("400x250")  # Розмір початкового вікна логіну
 
         self.create_login_screen()
 
-    # --- ЕКРАН ВХОДУ ---
+    # ВІКНО АВТОРИЗАЦІЇ
     def create_login_screen(self):
         self.login_frame = tk.Frame(self.root, pady=30)
         self.login_frame.pack()
@@ -92,55 +93,60 @@ class HRApp:
         self.entry_user.pack()
 
         tk.Label(self.login_frame, text="Пароль:").pack()
-        self.entry_pass = tk.Entry(self.login_frame, show="*")
+        self.entry_pass = tk.Entry(self.login_frame, show="*")  # ховаємо пароль зірочками
         self.entry_pass.pack()
 
         tk.Button(self.login_frame, text="Увійти", command=self.check_login, bg="#2b5797", fg="white", width=15).pack(
             pady=15)
 
+    # ЛОГІКА ПЕРЕВІРКИ ПАРОЛЯ
     def check_login(self):
         conn = sqlite3.connect("hr_port.db")
         cursor = conn.cursor()
+        # Шукаємо збіг логіна і пароля в базі
         cursor.execute("SELECT * FROM Users WHERE username=? AND password=?",
                        (self.entry_user.get(), self.entry_pass.get()))
         user = cursor.fetchone()
         conn.close()
 
         if user:
+            # Якщо пустило - вбиваємо вікно логіну і малюємо головний інтерфейс
             self.login_frame.destroy()
             self.create_main_screen()
         else:
             messagebox.showerror("Помилка", "Невірний логін або пароль")
 
-    # --- ГОЛОВНИЙ ЕКРАН ТА ТАБЛИЦЯ ---
+    # ГОЛОВНЕ ВІКНО ПРОГРАМИ
     def create_main_screen(self):
-        self.root.geometry("850x450")
+        self.root.geometry("850x450")  # Розширюємо вікно під таблицю
 
         top_frame = tk.Frame(self.root, pady=10, padx=10)
         top_frame.pack(fill="x")
 
         tk.Label(top_frame, text="Вибір категорії персоналу:", font=("Arial", 10, "bold")).pack(side="left")
 
-        # Випадаючий список категорій
+        # Випадаючий список для фільтрації
         self.cat_var = tk.StringVar()
         self.cat_combo = ttk.Combobox(top_frame, textvariable=self.cat_var, state="readonly", width=40)
         self.cat_combo['values'] = (
-        'Всі категорії', 'Керівництво та Адміністрація', 'Служба капітана порту', 'Виробничий персонал',
-        'Технічний та обслуговуючий персонал', 'Логістичний персонал')
+            'Всі категорії', 'Керівництво та Адміністрація', 'Служба капітана порту', 'Виробничий персонал',
+            'Технічний та обслуговуючий персонал', 'Логістичний персонал')
         self.cat_combo.current(0)
         self.cat_combo.pack(side="left", padx=10)
+        # Прив'язуємо зміну категорії до функції оновлення таблиці
         self.cat_combo.bind("<<ComboboxSelected>>", self.load_data)
 
+        # КНОПКИ ДІЙ (CRUD)
         tk.Button(top_frame, text="+ Вписати нову людину", bg="#107c41", fg="white", command=self.open_add_window).pack(
             side="right")
-
         tk.Button(top_frame, text="- Видалити обраного", bg="#a80000", fg="white", command=self.delete_employee).pack(
             side="right", padx=10)
 
-        # Таблиця
+        # ТАБЛИЦЯ (Дерево)
         columns = ("id", "name", "birth", "gender", "position", "category")
         self.tree = ttk.Treeview(self.root, columns=columns, show="headings", height=15)
 
+        # Налаштовуємо заголовки стовпців
         self.tree.heading("id", text="ID")
         self.tree.heading("name", text="ПІБ Працівника")
         self.tree.heading("birth", text="Дата народження")
@@ -148,6 +154,7 @@ class HRApp:
         self.tree.heading("position", text="Посада")
         self.tree.heading("category", text="Категорія")
 
+        # Трохи підганяємо ширину колонок, щоб виглядало адекватно
         self.tree.column("id", width=30, anchor="center")
         self.tree.column("name", width=200)
         self.tree.column("birth", width=110, anchor="center")
@@ -156,9 +163,13 @@ class HRApp:
         self.tree.column("category", width=200)
 
         self.tree.pack(fill="both", expand=True, padx=10, pady=5)
+
+        # Одразу вантажимо дані при старті вікна
         self.load_data()
 
+    # ФУНКЦІЯ ВИВЕДЕННЯ/ФІЛЬТРАЦІЇ ДАНИХ
     def load_data(self, event=None):
+        # Спочатку повністю чистимо поточну таблицю на екрані
         for row in self.tree.get_children():
             self.tree.delete(row)
 
@@ -166,6 +177,7 @@ class HRApp:
         conn = sqlite3.connect("hr_port.db")
         cursor = conn.cursor()
 
+        # Робимо JOIN, щоб замість цифри category_id виводило нормальну назву служби
         if selected_cat == 'Всі категорії':
             cursor.execute(
                 "SELECT E.id, E.full_name, E.birth_date, E.gender, E.position, C.name FROM Employees E JOIN Categories C ON E.category_id = C.id")
@@ -174,17 +186,18 @@ class HRApp:
                 "SELECT E.id, E.full_name, E.birth_date, E.gender, E.position, C.name FROM Employees E JOIN Categories C ON E.category_id = C.id WHERE C.name = ?",
                 (selected_cat,))
 
+        # Вставляємо отримані рядки в наше дерево
         for row in cursor.fetchall():
             self.tree.insert("", "end", values=row)
         conn.close()
 
-    # --- ВІКНО ДОДАВАННЯ ПРАЦІВНИКА ---
+    # ВІКНО ДОДАВАННЯ ПРАЦІВНИКА
     def open_add_window(self):
         add_win = tk.Toplevel(self.root)
         add_win.title("Нова особова справа")
         add_win.geometry("350x300")
-        add_win.transient(self.root)  # Прив'язка до головного вікна
-        add_win.grab_set()
+        add_win.transient(self.root)
+        add_win.grab_set()  # Робимо вікно модальним (щоб не клацали повз нього)
 
         tk.Label(add_win, text="ПІБ:").pack(pady=2)
         entry_name = tk.Entry(add_win, width=35)
@@ -211,59 +224,55 @@ class HRApp:
         combo_cat.current(2)
         combo_cat.pack()
 
+        # Вкладена функція для кнопки "Зберегти"
         def save_employee():
-            # Отримуємо ID категорії з бази
             conn = sqlite3.connect("hr_port.db")
             cursor = conn.cursor()
+
+            # Дістаємо ID вибраної категорії по її назві, бо в таблицю Employees пишеться тільки ID
             cursor.execute("SELECT id FROM Categories WHERE name=?", (combo_cat.get(),))
             cat_id = cursor.fetchone()[0]
 
-            # Зберігаємо працівника
             cursor.execute(
                 "INSERT INTO Employees (full_name, birth_date, gender, position, category_id) VALUES (?, ?, ?, ?, ?)",
                 (entry_name.get(), entry_birth.get(), combo_gender.get(), entry_pos.get(), cat_id))
             conn.commit()
             conn.close()
 
-            self.load_data()  # Оновлюємо головну таблицю
-            add_win.destroy()  # Закриваємо віконце
+            self.load_data()  # Оновлюємо таблицю на фоні
+            add_win.destroy()  # Закриваємо віконце додавання
 
         tk.Button(add_win, text="Зберегти", command=save_employee, bg="#107c41", fg="white", width=20).pack(pady=15)
 
-
-if __name__ == "__main__":
-    init_database()
-    window = tk.Tk()
-    app = HRApp(window)
-    window.mainloop()
-
-
-    # --- ФУНКЦІЯ ВИДАЛЕННЯ ПРАЦІВНИКА ---
+    # ФУНКЦІЯ ВИДАЛЕННЯ
     def delete_employee(self):
-        # Отримуємо виділений рядок у таблиці
         selected_item = self.tree.selection()
-
-        # Якщо нічого не виділено — показуємо попередження
+        # Захист від дурня: якщо натиснули кнопку, але нікого не вибрали
         if not selected_item:
             messagebox.showwarning("Увага", "Будь ласка, спочатку виберіть працівника у таблиці кліком миші!")
             return
 
-        # Витягуємо дані виділеного рядка (ID та ПІБ)
         item_values = self.tree.item(selected_item, "values")
         emp_id = item_values[0]
         emp_name = item_values[1]
 
-        # Запитуємо підтвердження (захист від випадкового кліку)
+        # Питаємо підтвердження (щоб випадково не стерли людину)
         confirm = messagebox.askyesno("Підтвердження", f"Ви дійсно хочете видалити працівника:\n{emp_name}?")
 
         if confirm:
-            # Видаляємо з бази даних
             conn = sqlite3.connect("hr_port.db")
             cursor = conn.cursor()
             cursor.execute("DELETE FROM Employees WHERE id = ?", (emp_id,))
             conn.commit()
             conn.close()
 
-            # Оновлюємо таблицю на екрані
-            self.load_data()
+            self.load_data()  # Оновлюємо таблицю після видалення
             messagebox.showinfo("Успіх", "Особову справу працівника успішно видалено з бази.")
+
+
+# Точка входу в програму
+if __name__ == "__main__":
+    init_database()
+    window = tk.Tk()
+    app = HRApp(window)
+    window.mainloop()
