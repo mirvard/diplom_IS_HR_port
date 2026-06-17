@@ -25,7 +25,9 @@ def init_database():
         CREATE TABLE IF NOT EXISTS Logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             action_time TEXT,
-            action_text TEXT
+            action_text TEXT,
+            user_id INTEGER,
+            FOREIGN KEY (user_id) REFERENCES Users(id)
         )
     """)
 
@@ -61,6 +63,10 @@ def init_database():
         cursor.execute("ALTER TABLE Employees ADD COLUMN address TEXT")
     except:
         pass
+    try:
+        cursor.execute("ALTER TABLE Logs ADD COLUMN user_id INTEGER")
+    except:
+        pass
 
     cursor.execute("SELECT COUNT(*) FROM Users")
     if cursor.fetchone()[0] == 0:
@@ -82,11 +88,11 @@ def init_database():
     conn.close()
 
 
-def log_action(text):
+def log_action(text, user_id=None):
     conn = sqlite3.connect("hr_port.db")
     cursor = conn.cursor()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    cursor.execute("INSERT INTO Logs (action_time, action_text) VALUES (?, ?)", (now, text))
+    cursor.execute("INSERT INTO Logs (action_time, action_text, user_id) VALUES (?, ?, ?)", (now, text, user_id))
     conn.commit()
     conn.close()
 
@@ -99,6 +105,7 @@ class HRApp:
         self.root = root
         self.root.title("ІС Відділу кадрів морського порту")
         self.root.geometry("400x250")
+        self.current_user_id = None
         self.create_login_screen()
 
     def create_login_screen(self):
@@ -122,7 +129,8 @@ class HRApp:
         conn.close()
 
         if user:
-            log_action(f"Користувач {self.entry_user.get()} увійшов у систему")
+            self.current_user_id = user[0]
+            log_action(f"Користувач {self.entry_user.get()} увійшов у систему", self.current_user_id)
             self.login_frame.destroy()
             self.create_main_screen()
         else:
@@ -222,7 +230,7 @@ class HRApp:
                 for row_id in self.tree.get_children():
                     writer.writerow(self.tree.item(row_id)['values'])
             messagebox.showinfo("Успіх", f"Звіт збережено у файл:\n{file_path}")
-            log_action("Згенеровано звіт у форматі CSV")
+            log_action("Згенеровано звіт у форматі CSV", self.current_user_id)
 
     def open_add_window(self):
         add_win = tk.Toplevel(self.root)
@@ -265,7 +273,7 @@ class HRApp:
                  en_phone.get(), en_address.get(), c_id))
             conn.commit()
             conn.close()
-            log_action(f"Додано нового працівника: {en_name.get()}")
+            log_action(f"Додано нового працівника: {en_name.get()}", self.current_user_id)
             self.load_data()
             add_win.destroy()
 
@@ -281,7 +289,7 @@ class HRApp:
             cursor.execute("DELETE FROM Employees WHERE id=?", (item[0],))
             conn.commit()
             conn.close()
-            log_action(f"Видалено працівника з ID: {item[0]}")
+            log_action(f"Видалено працівника з ID: {item[0]}", self.current_user_id)
             self.load_data()
 
 
