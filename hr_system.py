@@ -2,12 +2,9 @@ import sqlite3
 import tkinter as tk
 from tkinter import messagebox, ttk, filedialog
 from datetime import datetime, timedelta
-import csv  # Імпортував для експорту звітів, викладач просив додати
+import csv
 
 
-# =====================================================================
-# 1. ІНІЦІАЛІЗАЦІЯ БАЗИ ДАНИХ (Моя локальна SQLite)
-# =====================================================================
 def init_database():
     conn = sqlite3.connect("hr_port.db")
     cursor = conn.cursor()
@@ -38,7 +35,6 @@ def init_database():
         )
     """)
 
-    # Додав поля phone та address
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS Employees (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -54,7 +50,6 @@ def init_database():
         )
     """)
 
-    # Міграція: якщо таблиця вже існує без нових полів — додаємо їх
     try:
         cursor.execute("ALTER TABLE Employees ADD COLUMN phone TEXT")
     except:
@@ -97,9 +92,6 @@ def log_action(text, user_id=None):
     conn.close()
 
 
-# =====================================================================
-# 2. ГОЛОВНИЙ КЛАС ПРОГРАМИ
-# =====================================================================
 class HRApp:
     def __init__(self, root):
         self.root = root
@@ -155,7 +147,6 @@ class HRApp:
         tk.Button(top_frame, text="+ Нова справа", bg="#107c41", fg="white", command=self.open_add_window).pack(side="right")
         tk.Button(top_frame, text="- Видалити", bg="#a80000", fg="white", command=self.delete_employee).pack(side="right", padx=10)
 
-        # Додав колонки phone та address
         columns = ("id", "name", "birth", "gender", "position", "expiry", "phone", "address", "category")
         self.tree = ttk.Treeview(self.root, columns=columns, show="headings", height=15)
 
@@ -193,14 +184,15 @@ class HRApp:
         conn = sqlite3.connect("hr_port.db")
         cursor = conn.cursor()
 
-        # Додав phone та address у SELECT
         query = """SELECT E.id, E.full_name, E.birth_date, E.gender, E.position, 
                           E.cert_expiry, E.phone, E.address, C.name 
                    FROM Employees E JOIN Categories C ON E.category_id = C.id"""
+        params = ()
         if selected_cat != 'Всі категорії':
-            query += f" WHERE C.name = '{selected_cat}'"
+            query += " WHERE C.name = ?"
+            params = (selected_cat,)
 
-        cursor.execute(query)
+        cursor.execute(query, params)
         rows = cursor.fetchall()
 
         today = datetime.now().date()
@@ -215,7 +207,7 @@ class HRApp:
                     tag = 'expired'
                 elif expiry_date < warning_limit:
                     tag = 'warning'
-            except:
+            except (ValueError, TypeError):
                 pass
             self.tree.insert("", "end", values=row, tags=(tag,))
         conn.close()
@@ -225,7 +217,6 @@ class HRApp:
         if file_path:
             with open(file_path, mode='w', newline='', encoding='utf-8-sig') as file:
                 writer = csv.writer(file)
-                # Додав нові колонки у заголовок
                 writer.writerow(["ID", "ПІБ", "Дата народження", "Стать", "Посада", "Сертифікат до", "Телефон", "Адреса", "Служба"])
                 for row_id in self.tree.get_children():
                     writer.writerow(self.tree.item(row_id)['values'])
@@ -238,35 +229,49 @@ class HRApp:
         add_win.geometry("400x500")
 
         tk.Label(add_win, text="ПІБ:").pack()
-        en_name = tk.Entry(add_win, width=40); en_name.pack()
+        en_name = tk.Entry(add_win, width=40)
+        en_name.pack()
 
         tk.Label(add_win, text="Дата народження (РРРР-ММ-ДД):").pack()
-        en_birth = tk.Entry(add_win, width=40); en_birth.pack()
+        en_birth = tk.Entry(add_win, width=40)
+        en_birth.pack()
 
         tk.Label(add_win, text="Посада:").pack()
-        en_pos = tk.Entry(add_win, width=40); en_pos.pack()
+        en_pos = tk.Entry(add_win, width=40)
+        en_pos.pack()
 
         tk.Label(add_win, text="Сертифікат до (РРРР-ММ-ДД):").pack()
-        en_cert = tk.Entry(add_win, width=40); en_cert.pack()
+        en_cert = tk.Entry(add_win, width=40)
+        en_cert.pack()
 
-        # Нові поля
         tk.Label(add_win, text="Телефон (наприклад +380501234567):").pack()
-        en_phone = tk.Entry(add_win, width=40); en_phone.pack()
+        en_phone = tk.Entry(add_win, width=40)
+        en_phone.pack()
 
         tk.Label(add_win, text="Адреса проживання:").pack()
-        en_address = tk.Entry(add_win, width=40); en_address.pack()
+        en_address = tk.Entry(add_win, width=40)
+        en_address.pack()
 
         tk.Label(add_win, text="Категорія:").pack()
         cb_cat = ttk.Combobox(add_win, values=['Керівництво та Адміністрація', 'Служба капітана порту',
                               'Виробничий персонал', 'Технічний та обслуговуючий персонал',
                               'Логістичний персонал'], state="readonly", width=37)
-        cb_cat.current(0); cb_cat.pack()
+        cb_cat.current(0)
+        cb_cat.pack()
 
         def save():
+            if not en_name.get().strip():
+                messagebox.showerror("Помилка", "Поле ПІБ не може бути порожнім")
+                return
             conn = sqlite3.connect("hr_port.db")
             cursor = conn.cursor()
             cursor.execute("SELECT id FROM Categories WHERE name=?", (cb_cat.get(),))
-            c_id = cursor.fetchone()[0]
+            result = cursor.fetchone()
+            if result is None:
+                messagebox.showerror("Помилка", "Категорію не знайдено")
+                conn.close()
+                return
+            c_id = result[0]
             cursor.execute(
                 "INSERT INTO Employees (full_name, birth_date, gender, position, cert_expiry, phone, address, category_id) VALUES (?,?,?,?,?,?,?,?)",
                 (en_name.get(), en_birth.get(), "Чоловіча", en_pos.get(), en_cert.get(),
@@ -281,7 +286,8 @@ class HRApp:
 
     def delete_employee(self):
         selected = self.tree.selection()
-        if not selected: return
+        if not selected:
+            return
         item = self.tree.item(selected, "values")
         if messagebox.askyesno("Підтвердження", f"Видалити {item[1]}?"):
             conn = sqlite3.connect("hr_port.db")
